@@ -26,26 +26,37 @@ class ThreadMountain<T>(
 
     init {
         guardian.scheduleAtFixedRate({
+            //排序
+            Collections.sort(this, kotlin.Comparator { o1, o2 ->
+                return@Comparator o1.second - o2.second
+            })
+
+            //声明
             val work = this.poll() ?: return@scheduleAtFixedRate
             var levelOK = true
             val deadIndexes = ArrayList<Int>()
 
+            //寻找已经完成的线程
             for (index in 0 until threadList.size) {
                 if (!threadList[index].isAlive) {
                     deadIndexes.add(index)
                 }
             }
+            //剔除
             deadIndexes.iterator().forEach {
                 workList.removeAt(it)
                 threadList.removeAt(it)
             }
 
+            //查询运行列表中是否有需要等待的任务
             workList.iterator().forEach {
                 if (it.second < work.second) {
                     levelOK = false
                     return@forEach
                 }
             }
+
+            //尝试构建新任务
             if (levelOK) {
                 val callableHashCode = work.first.hashCode()
                 workList.add(Pair(callableHashCode, work.second))
@@ -61,9 +72,11 @@ class ThreadMountain<T>(
                     }
                 )
             } else {
+                //将需要等待的任务扔到队列最后
                 offer(work)
             }
 
+            //防止thread不退出
             while (deadList.isNotEmpty()) {
                 try {
                     val thread = deadList.pop()
@@ -76,19 +89,27 @@ class ThreadMountain<T>(
             }
         }, 1, 1, TimeUnit.MILLISECONDS)
 
+        //每分钟防止内存泄露
         guardian.scheduleAtFixedRate({
+            //回收内存
             if (workList.isNotEmpty()) {
                 System.gc()
             }
 
+            //对于运行超过2分钟的线程检查
             while (checkList.isNotEmpty()) {
                 val workToCheck = checkList.pop()
-                val thread = threadList[workList.indexOf(workToCheck)]
-                if (futures.containsKey(workToCheck.first) && !thread.isAlive) {
-                    deadList.push(thread)
+                try {
+                    val thread = threadList[workList.indexOf(workToCheck)]
+                    if (futures.containsKey(workToCheck.first) && !thread.isAlive) {
+                        deadList.push(thread)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
 
+            //加入检查列表
             checkList.addAll(workList)
         }, 1, 1, TimeUnit.MINUTES)
     }
