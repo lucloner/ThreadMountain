@@ -10,7 +10,8 @@ import kotlin.collections.HashMap
 //此为包装后的线程池,主要功能为根据优先级顺序执行,等级越高执行越是排后
 class ThreadMountain<T>(
     private val mountainName: String = UUID.randomUUID().toString(),
-    private val daemon: Boolean = false
+    private val daemon: Boolean = false,
+    private val timeout: Long = 60
 ) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler {
     private val guardian = Executors.newSingleThreadScheduledExecutor()
 
@@ -25,7 +26,7 @@ class ThreadMountain<T>(
     val exceptions = HashMap<Int, Throwable>()
 
     init {
-        guardian.scheduleAtFixedRate({
+        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate({
             //排序
             Collections.sort(this, kotlin.Comparator { o1, o2 ->
                 return@Comparator o1.second - o2.second
@@ -81,6 +82,7 @@ class ThreadMountain<T>(
                 try {
                     val thread = deadList.pop()
                     if (thread.isAlive) {
+                        System.out.println("\nstop dead\n")
                         thread.stop()
                     }
                 } catch (e: Exception) {
@@ -89,19 +91,31 @@ class ThreadMountain<T>(
             }
         }, 1, 1, TimeUnit.MILLISECONDS)
 
-        //每分钟防止内存泄露
-        guardian.scheduleAtFixedRate({
+        //timeout防止内存泄露
+        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate({
             //回收内存
             if (workList.isNotEmpty()) {
                 System.gc()
             }
 
-            //对于运行超过2分钟的线程检查
+            //对于运行超过2 x timeout的线程检查
             while (checkList.isNotEmpty()) {
                 val workToCheck = checkList.pop()
+                val workIndex = workList.indexOf(workToCheck)
                 try {
-                    val thread = threadList[workList.indexOf(workToCheck)]
-                    if (futures.containsKey(workToCheck.first) && !thread.isAlive) {
+                    if (workIndex < 0) {
+                        continue
+                    }
+                    val thread = threadList[workIndex]
+                    if (futures.containsKey(workToCheck.first)) {
+                        System.out.println("\ncheckList leak ${futures[workToCheck.first]}\n")
+                        if (deadList.contains(thread)) {
+                            workList.removeAt(workIndex)
+                            threadList.removeAt(workIndex)
+                            workList.add(Pair(workToCheck.first, Int.MAX_VALUE))
+                            threadList.add(thread)
+                        }
+
                         deadList.push(thread)
                     }
                 } catch (e: Exception) {
@@ -111,7 +125,7 @@ class ThreadMountain<T>(
 
             //加入检查列表
             checkList.addAll(workList)
-        }, 1, 1, TimeUnit.MINUTES)
+        }, timeout, timeout, TimeUnit.SECONDS)
     }
 
     /**
@@ -187,7 +201,7 @@ fun main(args: Array<String>) {
         System.out.println("callable c4 hash:${it.hashCode()}")
     }
 
-    val m = ThreadMountain<Any>()
+    val m = ThreadMountain<Any>(timeout = 15)
     m.offer(Pair(c1, 1))
     m.offer(Pair(c2, 2))
     m.offer(Pair(c3, 2))
