@@ -54,6 +54,7 @@ class ThreadMountain<T>(
                         futures[callableHashCode] = work.first.call()
                         deadList.push(Thread.currentThread())
                     }.apply {
+                        name = "${mountainName}_$callableHashCode"
                         uncaughtExceptionHandler = this@ThreadMountain
                         isDaemon = daemon
                         start()
