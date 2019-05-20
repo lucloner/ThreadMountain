@@ -6,7 +6,6 @@ import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashSet
-import kotlin.math.max
 import kotlin.math.min
 
 //此为包装后的线程池,主要功能为根据优先级顺序执行,等级越高执行越是排后
@@ -73,7 +72,7 @@ class ThreadMountain<T>(
 
             //加入检查列表
             workList.iterator().forEach {
-                if(it.executed() && it.iaAlive() && futures[it.hashCode()]?.isDone ?: false){
+                if(it.executed() && it.iaAlive() && futures[it.hashCode()]?.isDone == true){
                     checkList.add(it)
                 }
             }
@@ -109,6 +108,12 @@ class ThreadMountain<T>(
         t ?: return
         e ?: return
         e.printStackTrace()
+        workList.iterator().forEach {
+            if(it.sameThread(t)){
+                exceptions[it.hashCode()]=e
+                return
+            }
+        }
     }
 
     internal inner class Work(val queue:Pair<Callable<T>, Int>):Callable<T>{
@@ -131,10 +136,11 @@ class ThreadMountain<T>(
         fun iaAlive()=thread?.isAlive ?:true
         fun callable()=queue.first
         fun level()=fakeLevel
+        fun sameThread(thread: Thread)=this.thread?.equals(thread) ?:false
     }
 }
 
-fun main(args: Array<String>) {
+fun main() {
     val m = ThreadMountain<Any>()
     val c1 = object : Callable<Any> {
         override fun call(): Any {
@@ -188,29 +194,25 @@ fun main(args: Array<String>) {
     }.also {
         System.out.println("callable c4 hash:${it.hashCode()}")
     }
-    val cEnd= object :Callable<Any>{
-        /**
-         * Computes a result, or throws an exception if unable to do so.
-         *
-         * @return computed result
-         * @throws Exception if unable to compute a result
-         */
-        override fun call(): Any {
-            System.out.println()
-            val tg=Thread.currentThread().threadGroup
-            val total=tg.activeCount()
-            val ts=Array(total){Thread()}
-            tg.enumerate(ts)
-            ts.iterator().forEach {
-                System.out.println("===Thread:${it.name},Alive:${it.isAlive},State:${it.state}，Trace:${it.stackTrace.toList()}")
+    val cEnd= Callable<Any> /**
+     * Computes a result, or throws an exception if unable to do so.
+     *
+     * @return computed result
+     * @throws Exception if unable to compute a result
+     */
+    {
+        System.out.println()
+        val tg=Thread.currentThread().threadGroup
+        val total=tg.activeCount()
+        val ts=Array(total){Thread()}
+        tg.enumerate(ts)
+        ts.iterator().forEach {
+            System.out.println("===Thread:${it.name},Alive:${it.isAlive},State:${it.state}，Trace:${it.stackTrace.toList()}")
+        }
+        m.returnCode.iterator().forEach { rCode ->
+            rCode.value.iterator().forEach {
+                System.out.println("===callable:${rCode.key.hashCode()},return:${m.futures[it]?.get(5,TimeUnit.SECONDS)},exception:${m.exceptions[it]}")
             }
-            m.returnCode.iterator().forEach {
-                val callable=it.key.hashCode()
-                it.value.iterator().forEach {
-                    System.out.println("===callable:${callable},return:${m.futures[it]?.get(5,TimeUnit.SECONDS)},exception:${m.exceptions[it]}")
-                }
-            }
-            return Int.MAX_VALUE
         }
     }
 
