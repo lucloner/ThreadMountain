@@ -1,131 +1,99 @@
 package net.vicp.biggee.kotlin.thread
 
 import java.util.*
-import java.util.concurrent.Callable
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
+import kotlin.collections.HashSet
+import kotlin.collections.LinkedHashSet
+import kotlin.math.max
+import kotlin.math.min
 
 //此为包装后的线程池,主要功能为根据优先级顺序执行,等级越高执行越是排后
 class ThreadMountain<T>(
-    private val mountainName: String = UUID.randomUUID().toString(),
-    private val daemon: Boolean = false,
-    private val timeout: Long = 60
-) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler {
-    private val guardian = Executors.newSingleThreadScheduledExecutor()
+    val mountainName: String = UUID.randomUUID().toString(),
+    val daemon: Boolean = false,
+    timeout: Long = 500
+) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler, ThreadFactory {
+    private val guardian = Executors.newScheduledThreadPool(1)
+    private val taskManager = Executors.newScheduledThreadPool(1)
+    private val pool = Executors.newCachedThreadPool(this)
+    val threadGroup = ThreadGroup(mountainName).apply {
+        isDaemon = daemon
+    }
 
     //运行时集合
-    private val workList = ArrayList<Pair<Int, Int>>()
-    private val threadList = ArrayList<Thread>()
-    private val deadList = Stack<Thread>()
-    private val checkList = LinkedList<Pair<Int, Int>>()
+    private val workList = HashSet<Work>()
+    private val checkList= HashSet<Work>()
 
     //返回集合
-    val futures = HashMap<Int, T?>()
+    val returnCode = HashMap<Callable<T>, LinkedHashSet<Int>>()
+    val futures = HashMap<Int, Future<T>>()
     val exceptions = HashMap<Int, Throwable>()
 
     init {
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate({
+        taskManager.scheduleAtFixedRate({
             //排序
             Collections.sort(this, kotlin.Comparator { o1, o2 ->
                 return@Comparator o1.second - o2.second
             })
 
             //声明
-            val work = this.poll() ?: return@scheduleAtFixedRate
-            var levelOK = true
-            val deadIndexes = ArrayList<Int>()
-
-            //寻找已经完成的线程
-            for (index in 0 until threadList.size) {
-                if (!threadList[index].isAlive) {
-                    deadIndexes.add(index)
-                }
-            }
-            //剔除
-            deadIndexes.iterator().forEach {
-                workList.removeAt(it)
-                threadList.removeAt(it)
-            }
-
-            //查询运行列表中是否有需要等待的任务
+            val work=Work(poll()?: return@scheduleAtFixedRate)
+            val done=ArrayList<Work>()
+            var minlevel=Int.MAX_VALUE
             workList.iterator().forEach {
-                if (it.second < work.second) {
-                    levelOK = false
-                    return@forEach
+                if(it.iaAlive()){
+                    minlevel=min(minlevel,it.level())
+                }
+                else{
+                    done.add(it)
                 }
             }
+            workList.removeAll(done)
 
-            //尝试构建新任务
-            if (levelOK) {
-                val callableHashCode = work.first.hashCode()
-                workList.add(Pair(callableHashCode, work.second))
-                threadList.add(
-                    Thread {
-                        futures[callableHashCode] = work.first.call()
-                        deadList.push(Thread.currentThread())
-                    }.apply {
-                        name = "${mountainName}_$callableHashCode"
-                        uncaughtExceptionHandler = this@ThreadMountain
-                        isDaemon = daemon
-                        start()
-                    }
-                )
-            } else {
-                //将需要等待的任务扔到队列最后
-                offer(work)
+            if(work.level()>minlevel){
+                offer(work.queue)
             }
-
-            //防止thread不退出
-            while (deadList.isNotEmpty()) {
-                try {
-                    val thread = deadList.pop()
-                    if (thread.isAlive) {
-                        System.out.println("\nstop dead\n")
-                        thread.stop()
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            else{
+                futures[work.hashCode()]=pool.submit(work)
+                val returnCodeList=returnCode[work.callable()]?: LinkedHashSet()
+                returnCodeList.add(work.hashCode())
+                returnCode[work.callable()]=returnCodeList
             }
         }, 1, 1, TimeUnit.MILLISECONDS)
 
-        //timeout防止内存泄露
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate({
-            //回收内存
-            if (workList.isNotEmpty()) {
-                System.gc()
-            }
+        guardian.scheduleAtFixedRate({
+            //timeout防止内存泄露(单位:秒)
 
             //对于运行超过2 x timeout的线程检查
-            while (checkList.isNotEmpty()) {
-                val workToCheck = checkList.pop()
-                val workIndex = workList.indexOf(workToCheck)
-                try {
-                    if (workIndex < 0) {
-                        continue
-                    }
-                    val thread = threadList[workIndex]
-                    if (futures.containsKey(workToCheck.first)) {
-                        System.out.println("\ncheckList leak ${futures[workToCheck.first]}\n")
-                        if (deadList.contains(thread)) {
-                            workList.removeAt(workIndex)
-                            threadList.removeAt(workIndex)
-                            workList.add(Pair(workToCheck.first, Int.MAX_VALUE))
-                            threadList.add(thread)
-                        }
-
-                        deadList.push(thread)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            checkList.iterator().forEach {
+                it.fakeLevel= Int.MAX_VALUE
             }
 
             //加入检查列表
-            checkList.addAll(workList)
-        }, timeout, timeout, TimeUnit.SECONDS)
+            workList.iterator().forEach {
+                if(it.executed() && it.iaAlive() && futures[it.hashCode()]?.isDone ?: false){
+                    checkList.add(it)
+                }
+            }
+        }, timeout, timeout, TimeUnit.MILLISECONDS)
+    }
+
+    /**
+     * Constructs a new `Thread`.  Implementations may also initialize
+     * priority, name, daemon status, `ThreadGroup`, etc.
+     *
+     * @param r a runnable to be executed by new thread instance
+     * @return constructed thread, or `null` if the request to
+     * create a thread is rejected
+     */
+    override fun newThread(r: Runnable?): Thread {
+        return Thread(threadGroup, r).apply {
+            name = "${mountainName}_${r.hashCode()}"
+            uncaughtExceptionHandler = this@ThreadMountain
+            isDaemon = daemon
+        }
     }
 
     /**
@@ -141,13 +109,33 @@ class ThreadMountain<T>(
         t ?: return
         e ?: return
         e.printStackTrace()
-        val index = threadList.indexOf(t)
-        val work = workList.get(index)
-        exceptions[work.first] = e
+    }
+
+    internal inner class Work(val queue:Pair<Callable<T>, Int>):Callable<T>{
+        private var thread:Thread?=null
+        var fakeLevel=queue.second
+
+        /**
+         * Computes a result, or throws an exception if unable to do so.
+         *
+         * @return computed result
+         * @throws Exception if unable to compute a result
+         */
+        override fun call(): T {
+            thread= Thread.currentThread()
+            workList.add(this)
+            return queue.first.call()
+        }
+
+        fun executed()=thread!=null
+        fun iaAlive()=thread?.isAlive ?:true
+        fun callable()=queue.first
+        fun level()=fakeLevel
     }
 }
 
 fun main(args: Array<String>) {
+    val m = ThreadMountain<Any>()
     val c1 = object : Callable<Any> {
         override fun call(): Any {
             System.out.println("\n!START(${this.hashCode()})!!!!!!!!!!!!!!!!!!!!!!!")
@@ -200,10 +188,35 @@ fun main(args: Array<String>) {
     }.also {
         System.out.println("callable c4 hash:${it.hashCode()}")
     }
+    val cEnd= object :Callable<Any>{
+        /**
+         * Computes a result, or throws an exception if unable to do so.
+         *
+         * @return computed result
+         * @throws Exception if unable to compute a result
+         */
+        override fun call(): Any {
+            System.out.println()
+            val tg=Thread.currentThread().threadGroup
+            val total=tg.activeCount()
+            val ts=Array(total){Thread()}
+            tg.enumerate(ts)
+            ts.iterator().forEach {
+                System.out.println("===Thread:${it.name},Alive:${it.isAlive},State:${it.state}，Trace:${it.stackTrace.toList()}")
+            }
+            m.returnCode.iterator().forEach {
+                val callable=it.key.hashCode()
+                it.value.iterator().forEach {
+                    System.out.println("===callable:${callable},return:${m.futures[it]?.get(5,TimeUnit.SECONDS)},exception:${m.exceptions[it]}")
+                }
+            }
+            return Int.MAX_VALUE
+        }
+    }
 
-    val m = ThreadMountain<Any>(timeout = 15)
-    m.offer(Pair(c1, 1))
+    m.offer(Pair(c1, 3))
     m.offer(Pair(c2, 2))
-    m.offer(Pair(c3, 2))
+    m.offer(Pair(c3, 1))
     m.offer(Pair(c4, 3))
+    m.offer(Pair(cEnd, Int.MAX_VALUE))
 }
