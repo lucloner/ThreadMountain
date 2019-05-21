@@ -42,7 +42,7 @@ class ThreadMountain<T>(
             val done = ArrayList<Work>()
             var minlevel = Int.MAX_VALUE
             workList.iterator().forEach {
-                if (it.iaAlive()) {
+                if (it.isAlive()) {
                     minlevel = min(minlevel, it.level())
                 } else {
                     done.add(it)
@@ -67,10 +67,11 @@ class ThreadMountain<T>(
             checkList.iterator().forEach {
                 it.fakeLevel = Int.MAX_VALUE
             }
+            checkList.clear()
 
             //加入检查列表
             workList.iterator().forEach {
-                if (it.executed() && it.iaAlive() && futures[it.hashCode()]?.isDone == true) {
+                if (it.executed() && it.isAlive() && futures[it.hashCode()]?.isDone == true) {
                     checkList.add(it)
                 }
             }
@@ -131,7 +132,7 @@ class ThreadMountain<T>(
         }
 
         fun executed() = thread != null
-        fun iaAlive() = thread?.isAlive ?: true
+        fun isAlive() = thread?.isAlive ?: true
         fun callable() = queue.first
         fun level() = fakeLevel
         fun sameThread(thread: Thread) = this.thread?.equals(thread) ?: false
@@ -226,7 +227,6 @@ class ThreadMountain<T>(
             m.offer(Pair(c3, 1))
             m.offer(Pair(c4, 3))
             m.offer(Pair(cEnd, Int.MAX_VALUE))
-
         }
     }
 }
