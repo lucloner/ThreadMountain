@@ -12,11 +12,10 @@ import kotlin.math.min
 class ThreadMountain<T>(
     val mountainName: String = UUID.randomUUID().toString(),
     val daemon: Boolean = false,
-    timeout: Long = 500
+    timeout: Long = 5000
 ) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler, ThreadFactory {
     private val guardian = Executors.newScheduledThreadPool(1)
     private val taskManager = Executors.newScheduledThreadPool(1)
-    private val pool = Executors.newCachedThreadPool(this)
     val threadGroup = ThreadGroup(mountainName).apply {
         isDaemon = daemon
     }
@@ -27,7 +26,7 @@ class ThreadMountain<T>(
 
     //返回集合
     val returnCode = HashMap<Callable<T>, LinkedHashSet<Int>>()
-    val futures = HashMap<Int, Future<T>>()
+    val futures = HashMap<Int, Future<T>?>()
     val exceptions = HashMap<Int, Throwable>()
 
     init {
@@ -53,7 +52,8 @@ class ThreadMountain<T>(
             if (work.level() > minlevel) {
                 offer(work.queue)
             } else {
-                futures[work.hashCode()] = pool.submit(work)
+                futures[work.hashCode()] = work.doSubmit()
+                work.shutdown()
                 val returnCodeList = returnCode[work.callable()] ?: LinkedHashSet()
                 returnCodeList.add(work.hashCode())
                 returnCode[work.callable()] = returnCodeList
@@ -66,6 +66,11 @@ class ThreadMountain<T>(
             //对于运行超过2 x timeout的线程检查
             checkList.iterator().forEach {
                 it.fakeLevel = Int.MAX_VALUE
+                try {
+                    it.dispose()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
             checkList.clear()
 
@@ -115,9 +120,11 @@ class ThreadMountain<T>(
         }
     }
 
-    internal inner class Work(val queue: Pair<Callable<T>, Int>) : Callable<T> {
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+    internal inner class Work(val queue: Pair<Callable<T>, Int>) : java.lang.Object(), Callable<T> {
         private var thread: Thread? = null
         var fakeLevel = queue.second
+        private val pool = Executors.newSingleThreadExecutor(this@ThreadMountain)
 
         /**
          * Computes a result, or throws an exception if unable to do so.
@@ -136,12 +143,16 @@ class ThreadMountain<T>(
         fun callable() = queue.first
         fun level() = fakeLevel
         fun sameThread(thread: Thread) = this.thread?.equals(thread) ?: false
+        fun doSubmit(): Future<T>? = pool.submit(this)
+        fun shutdown() = pool.shutdown()
+        fun stop() = pool.shutdownNow()
+        fun dispose() = finalize()
     }
 
     companion object {
         @JvmStatic
         fun main(args: Array<String>) {
-            val m = ThreadMountain<Any>()
+            val m = ThreadMountain<Any>(timeout = 1000)
             val c1 = object : Callable<Any> {
                 override fun call(): Any {
                     System.out.println("\n!START(${this.hashCode()})!!!!!!!!!!!!!!!!!!!!!!!")
@@ -225,7 +236,7 @@ class ThreadMountain<T>(
             m.offer(Pair(c1, 3))
             m.offer(Pair(c2, 2))
             m.offer(Pair(c3, 1))
-            m.offer(Pair(c4, 3))
+            m.offer(Pair(c4, 2))
             m.offer(Pair(cEnd, Int.MAX_VALUE))
         }
     }
