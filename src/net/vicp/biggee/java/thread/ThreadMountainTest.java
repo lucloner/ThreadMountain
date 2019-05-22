@@ -75,13 +75,13 @@ public class ThreadMountainTest {
                         "Trace:" + Arrays.toString(it.getStackTrace()));
             }
 
-            final Iterator<? extends Callable<?>> returnCodeIterator = m.returnCode.keySet().iterator();
-            Callable<?> callable;
-            while ((callable = returnCodeIterator.next()) != null) {
+            final Iterator<Callable<Object>> returnCodeIterator = m.returnCode.keySet().iterator();
+            while (returnCodeIterator.hasNext()) {
+                final Callable<Object> callable = returnCodeIterator.next();
                 final int rCode = callable.hashCode();
                 final Iterator<Integer> futuresIterator = m.futures.keySet().iterator();
-                Integer it;
-                while ((it = futuresIterator.next()) != null) {
+                while (futuresIterator.hasNext()) {
+                    final int it = futuresIterator.next();
                     System.out.println("===callable:" + rCode + "," +
                             "return:" + m.futures.get(it).get(m.timeout, TimeUnit.MILLISECONDS) + "," +
                             "exception:" + m.exceptions.get(it));

@@ -132,18 +132,18 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         }, this.timeout, this.timeout, TimeUnit.MILLISECONDS);
     }
 
-    public final boolean addWork(Callable<? extends T> callable, int level) {
+    public final boolean addWork(@NotNull Callable<? extends T> callable, int level) {
         return offer(new ThreadMountain.Work(callable, level));
     }
 
     final class Work extends Object implements Callable<T> {
         private final ExecutorService pool = Executors.newSingleThreadExecutor(threadFactory);
         private final Callable<? extends T> callable;
-        int fakeLevel;
-        private Thread thread = null;
+        volatile int fakeLevel;
+        private volatile Thread thread = null;
 
         //构造函数
-        public Work(@NotNull final Callable<? extends T> callable, final int level) {
+        Work(@NotNull final Callable<? extends T> callable, final int level) {
             super();
             this.callable = callable;
             fakeLevel = level;
@@ -162,39 +162,39 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             return callable.call();
         }
 
-        public final boolean executed() {
+        final boolean executed() {
             return thread != null;
         }
 
-        public final boolean isAlive() {
+        final boolean isAlive() {
             return thread.isAlive();
         }
 
-        public final Callable<? extends T> callable() {
+        final Callable<? extends T> callable() {
             return callable;
         }
 
-        public final int level() {
+        final int level() {
             return fakeLevel;
         }
 
-        public final boolean sameThread(Thread thread) {
+        final boolean sameThread(Thread thread) {
             return this.thread.equals(thread);
         }
 
-        public final Future<? extends T> doSubmit() {
+        final Future<? extends T> doSubmit() {
             return pool.submit(this);
         }
 
-        public final void shutdown() {
+        final void shutdown() {
             pool.shutdown();
         }
 
-        public final void stop() {
+        final void stop() {
             pool.shutdownNow();
         }
 
-        public final void dispose() throws Throwable {
+        final void dispose() throws Throwable {
             finalize();
         }
     }
