@@ -5,11 +5,16 @@ import com.sun.istack.internal.NotNull;
 import java.util.*;
 import java.util.concurrent.*;
 
-public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> implements Thread.UncaughtExceptionHandler, ThreadFactory {
+public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
     public final String mountainName;
     public final boolean daemon;
     public final long timeout;
     public final ThreadGroup threadGroup;
+    private final Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
+    private final ThreadFactory threadFactory;
+    private final ScheduledExecutorService taskManager = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService guardian = Executors.newSingleThreadScheduledExecutor();
+
     //返回集合
     public final HashMap<Callable<T>, LinkedHashSet<Integer>> returnCode = new HashMap<>();
     public final HashMap<Integer, Future<T>> futures = new HashMap<>();
@@ -40,22 +45,43 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
         } else {
             this.timeout = 5000L;
         }
+
+        uncaughtExceptionHandler = (t, e) -> {
+            final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
+            while (workListIterator.hasNext()) {
+                final ThreadMountain.Work it = workListIterator.next();
+                if (it.sameThread(t)) {
+                    exceptions.put(it.hashCode(), e);
+                    return;
+                }
+            }
+        };
+
         threadGroup = new ThreadGroup(mountainName);
         threadGroup.setDaemon(this.daemon);
+        threadFactory = (r) -> {
+            final Thread thread = new Thread(threadGroup, r, this.mountainName + "_" + r.hashCode());
+            thread.setDaemon(this.daemon);
+            thread.setUncaughtExceptionHandler(uncaughtExceptionHandler);
+            return thread;
+        };
 
         //开始做事
-        ScheduledExecutorService taskManager = Executors.newSingleThreadScheduledExecutor();
         taskManager.scheduleAtFixedRate(() -> {
             //排序
             this.sort(Comparator.comparingInt(o -> o.fakeLevel));
 
             //声明
             final ThreadMountain.Work work = poll();
+            if (work == null) {
+                return;
+            }
+
             final ArrayList<ThreadMountain.Work> done = new ArrayList<>();
             int minlevel = Integer.MAX_VALUE;
             final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
-            ThreadMountain.Work it;
-            while ((it = workListIterator.next()) != null) {
+            while (workListIterator.hasNext()) {
+                final ThreadMountain.Work it = workListIterator.next();
                 if (it.isAlive()) {
                     minlevel = Integer.min(minlevel, it.level());
                 } else {
@@ -78,14 +104,13 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
             }
         }, 1, 1, TimeUnit.MILLISECONDS);
 
-        ScheduledExecutorService guardian = Executors.newSingleThreadScheduledExecutor();
         guardian.scheduleAtFixedRate(() -> {
             //timeout防止内存泄露(单位:秒)
 
             //对于运行超过2 x timeout的线程检查
             final Iterator<ThreadMountain.Work> checkListIterator = checkList.iterator();
-            ThreadMountain.Work it;
-            while ((it = checkListIterator.next()) != null) {
+            while (checkListIterator.hasNext()) {
+                final ThreadMountain.Work it = checkListIterator.next();
                 it.fakeLevel = Integer.MAX_VALUE;
                 try {
                     it.dispose();
@@ -97,7 +122,8 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
 
             //加入检查列表
             final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
-            while ((it = workListIterator.next()) != null) {
+            while (workListIterator.hasNext()) {
+                final ThreadMountain.Work it = workListIterator.next();
                 if (it.executed() && it.isAlive() && futures.get(it.hashCode()).isDone()) {
                     checkList.add(it);
                 }
@@ -106,54 +132,18 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
         }, this.timeout, this.timeout, TimeUnit.MILLISECONDS);
     }
 
-    public final void addWork(Callable callable, int level) {
-        offer(new ThreadMountain.Work(callable, level));
+    public final boolean addWork(Callable<? extends T> callable, int level) {
+        return offer(new ThreadMountain.Work(callable, level));
     }
 
-    /**
-     * Method invoked when the given thread terminates due to the
-     * given uncaught exception.
-     * <p>Any exception thrown by this method will be ignored by the
-     * Java Virtual Machine.
-     *
-     * @param t the thread
-     * @param e the exception
-     */
-    @Override
-    public void uncaughtException(Thread t, Throwable e) {
-        final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
-        ThreadMountain.Work it;
-        while ((it = workListIterator.next()) != null) {
-            if (it.sameThread(t)) {
-                exceptions.put(it.hashCode(), e);
-                return;
-            }
-        }
-    }
-
-    /**
-     * Constructs a new {@code Thread}.  Implementations may also initialize
-     * priority, name, daemon status, {@code ThreadGroup}, etc.
-     *
-     * @param r a runnable to be executed by new thread instance
-     * @return constructed thread, or {@code null} if the request to
-     * create a thread is rejected
-     */
-    @Override
-    public Thread newThread(Runnable r) {
-        final Thread thread = new Thread(threadGroup, r, mountainName + "_" + r.hashCode());
-        thread.setDaemon(daemon);
-        return thread;
-    }
-
-    public final class Work<T> extends Object implements Callable<T> {
-        private final ExecutorService pool = Executors.newSingleThreadExecutor(ThreadMountain.this);
-        private final Callable<T> callable;
+    final class Work extends Object implements Callable<T> {
+        private final ExecutorService pool = Executors.newSingleThreadExecutor(threadFactory);
+        private final Callable<? extends T> callable;
         int fakeLevel;
         private Thread thread = null;
 
         //构造函数
-        public Work(@NotNull final Callable<T> callable, final int level) {
+        public Work(@NotNull final Callable<? extends T> callable, final int level) {
             super();
             this.callable = callable;
             fakeLevel = level;
@@ -180,7 +170,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
             return thread.isAlive();
         }
 
-        public final Callable<T> callable() {
+        public final Callable<? extends T> callable() {
             return callable;
         }
 
@@ -192,7 +182,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> imp
             return this.thread.equals(thread);
         }
 
-        public final Future<T> doSubmit() {
+        public final Future<? extends T> doSubmit() {
             return pool.submit(this);
         }
 

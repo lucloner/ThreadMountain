@@ -1,31 +1,19 @@
 package net.vicp.biggee.java.thread;
 
-import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.asset.EmptyAsset;
-import org.jboss.shrinkwrap.api.spec.JavaArchive;
-
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
-//@RunWith(Arquillian.class)
 public class ThreadMountainTest {
-    @Deployment
-    public static JavaArchive createDeployment() {
-        return ShrinkWrap.create(JavaArchive.class)
-                .addClass(ThreadMountain.class)
-                .addAsManifestResource(EmptyAsset.INSTANCE, "beans.xml");
-    }
 
     public static void main(String[] args) {
         new ThreadMountainTest().test();
     }
 
     public void test() {
-        final ThreadMountain<?> m = new ThreadMountain<>();
-        final Callable<?> c1 = new Callable<Object>() {
+        final ThreadMountain<Object> m = new ThreadMountain<>();
+        final Callable<Object> c1 = new Callable<Object>() {
             @Override
             public Object call() throws Exception {
                 System.out.println("\n!START(" + this.hashCode() + ")!!!!!!!!!!!!!!!!!!!!!!!");
@@ -37,7 +25,7 @@ public class ThreadMountainTest {
                 return 1;
             }
         };
-        final Callable<?> c2 = new Callable<Object>() {
+        final Callable<Object> c2 = new Callable<Object>() {
             @Override
             public Object call() throws Exception {
                 System.out.println("\n@START(" + this.hashCode() + ")@@@@@@@@@@@@@@@@@@@@@@@");
@@ -49,7 +37,7 @@ public class ThreadMountainTest {
                 return 1;
             }
         };
-        final Callable<?> c3 = new Callable<Object>() {
+        final Callable<Object> c3 = new Callable<Object>() {
             @Override
             public Object call() throws Exception {
                 System.out.println("\n#START(" + this.hashCode() + ")#######################");
@@ -61,7 +49,7 @@ public class ThreadMountainTest {
                 return 1;
             }
         };
-        final Callable<?> c4 = new Callable<Object>() {
+        final Callable<Object> c4 = new Callable<Object>() {
             @Override
             public Object call() throws Exception {
                 System.out.println("\n%START(" + this.hashCode() + ")%%%%%%%%%%%%%%%%%%%%%%%");
@@ -73,7 +61,7 @@ public class ThreadMountainTest {
                 return 1;
             }
         };
-        final Callable<?> cEnd = () -> {
+        final Callable<Object> cEnd = () -> {
             System.out.println();
             final ThreadGroup tg = Thread.currentThread().getThreadGroup();
             final int total = tg.activeCount();
@@ -102,11 +90,16 @@ public class ThreadMountainTest {
             return Integer.MAX_VALUE;
         };
 
+        System.out.println("add c1");
         m.addWork(c1, 3);
+        System.out.println("add c2");
         m.addWork(c2, 2);
+        System.out.println("add c3");
         m.addWork(c3, 1);
+        System.out.println("add c4");
         m.addWork(c4, 2);
+        System.out.println("add cEnd");
         m.addWork(cEnd, Integer.MAX_VALUE);
+        System.out.println("main end");
     }
-
 }
