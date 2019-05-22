@@ -122,7 +122,7 @@ class ThreadMountain<T>(
 
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     internal inner class Work(val queue: Pair<Callable<T>, Int>) : java.lang.Object(), Callable<T> {
-        private var thread: Thread? = null
+        private val thread by lazy { Thread.currentThread() }
         var fakeLevel = queue.second
         private val pool = Executors.newSingleThreadExecutor(this@ThreadMountain)
 
@@ -133,7 +133,7 @@ class ThreadMountain<T>(
          * @throws Exception if unable to compute a result
          */
         override fun call(): T {
-            thread = Thread.currentThread()
+            thread
             workList.add(this)
             return queue.first.call()
         }
@@ -206,12 +206,6 @@ class ThreadMountain<T>(
                 System.out.println("callable c4 hash:${it.hashCode()}")
             }
             val cEnd = Callable<Any>
-            /**
-             * Computes a result, or throws an exception if unable to do so.
-             *
-             * @return computed result
-             * @throws Exception if unable to compute a result
-             */
             {
                 System.out.println()
                 val tg = Thread.currentThread().threadGroup
