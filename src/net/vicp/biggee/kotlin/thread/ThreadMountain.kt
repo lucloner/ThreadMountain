@@ -12,7 +12,7 @@ import kotlin.math.min
 class ThreadMountain<T>(
     val mountainName: String = UUID.randomUUID().toString(),
     val daemon: Boolean = false,
-    timeout: Long = 5000
+    val timeout: Long = 5000
 ) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler, ThreadFactory {
     private val guardian = Executors.newScheduledThreadPool(1)
     private val taskManager = Executors.newScheduledThreadPool(1)
@@ -37,7 +37,7 @@ class ThreadMountain<T>(
             })
 
             //声明
-            val work = Work(poll() ?: return@scheduleAtFixedRate)
+            val workPair: Pair<Callable<T>, Int>? = poll()
             val done = ArrayList<Work>()
             var minlevel = Int.MAX_VALUE
             workList.iterator().forEach {
@@ -49,6 +49,7 @@ class ThreadMountain<T>(
             }
             workList.removeAll(done)
 
+            val work = Work(workPair ?: return@scheduleAtFixedRate)
             if (work.level() > minlevel) {
                 offer(work.queue)
             } else {
@@ -80,6 +81,9 @@ class ThreadMountain<T>(
                     checkList.add(it)
                 }
             }
+
+            //清空缓存
+            cacheCallable.removeAll(returnCode.keys)
         }, timeout, timeout, TimeUnit.MILLISECONDS)
     }
 
@@ -120,11 +124,84 @@ class ThreadMountain<T>(
         }
     }
 
+    @Deprecated("测试中,还未成功")
+    fun inQueue(callable: Callable<T>): Boolean {
+        val default = Callable { return@Callable Int.MAX_VALUE }
+        cacheCallable.addAll(Array<Callable<*>>(size * 2) {
+            try {
+                return@Array getOrElse(it) { Pair<Callable<*>, Int>(default, Int.MAX_VALUE) }.first
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return@Array default
+        })
+        cacheCallable.remove(default)
+        cacheCallable.removeAll(returnCode.keys)
+        return cacheCallable.contains(callable)
+    }
+
+    @Deprecated("测试中,还未成功")
+    private fun waitQueue(callable: Callable<T>, timeout: Long = this.timeout) {
+        var timer = 0L
+        while (inQueue(callable)) {
+            Thread.sleep(2)
+            if (timer++ * 2 > timeout) {
+                break
+            }
+        }
+    }
+
+    @Deprecated("测试中,还未成功")
+    private fun joinCallable(callable: Callable<T>, workHash: Int?): Boolean {
+        waitQueue(callable)
+        while (returnCode.containsKey(callable)) {
+            workList.iterator().forEach {
+                val hash = workHash ?: it.hashCode()
+                val isDone = futures[hash]?.isDone ?: !it.isAlive()
+                if (!isDone && hash == callable.hashCode()) {
+                    while (!it.executed()) {
+                        Thread.sleep(2)
+                    }
+                    it.join()
+                    return true
+                } else if (isDone) {
+                    System.out.println("already done!")
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    @Deprecated("测试中,还未成功")
+    fun join(callable: Callable<T>) = joinCallable(callable, returnCode[callable]?.last())
+
+    @Deprecated("测试中,还未成功")
+    fun joinAll(callable: Callable<T>): Boolean {
+        var allDone = false
+        waitQueue(callable)
+        returnCode[callable]?.iterator()?.forEach {
+            allDone = allDone || joinCallable(callable, it)
+        } ?: return false
+        return allDone
+    }
+
+    fun finalize() {
+        guardian.shutdown()
+        taskManager.shutdown()
+    }
+
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
-    internal inner class Work(val queue: Pair<Callable<T>, Int>) : java.lang.Object(), Callable<T> {
-        private val thread by lazy { Thread.currentThread() }
+    private inner class Work(val queue: Pair<Callable<T>, Int>) : java.lang.Object(), Callable<T> {
+        @Volatile
+        private var thread: Thread? = null
+        @Volatile
         var fakeLevel = queue.second
         private val pool = Executors.newSingleThreadExecutor(this@ThreadMountain)
+
+        init {
+            cacheCallable.add(queue.first)
+        }
 
         /**
          * Computes a result, or throws an exception if unable to do so.
@@ -133,11 +210,12 @@ class ThreadMountain<T>(
          * @throws Exception if unable to compute a result
          */
         override fun call(): T {
-            thread
+            thread = Thread.currentThread()
             workList.add(this)
             return queue.first.call()
         }
 
+        fun join() = thread?.join()
         fun executed() = thread != null
         fun isAlive() = thread?.isAlive ?: true
         fun callable() = queue.first
@@ -150,9 +228,11 @@ class ThreadMountain<T>(
     }
 
     companion object {
+        val cacheCallable = HashSet<Callable<*>>()
+
         @JvmStatic
         fun main(args: Array<String>) {
-            val m = ThreadMountain<Any>(timeout = 1000)
+            val m = ThreadMountain<Any>(daemon = false, timeout = 10000)
             val c1 = object : Callable<Any> {
                 override fun call(): Any {
                     System.out.println("\n!START(${this.hashCode()})!!!!!!!!!!!!!!!!!!!!!!!")
@@ -205,8 +285,7 @@ class ThreadMountain<T>(
             }.also {
                 System.out.println("callable c4 hash:${it.hashCode()}")
             }
-            val cEnd = Callable<Any>
-            {
+            val cEnd = Callable<Any> {
                 System.out.println()
                 val tg = Thread.currentThread().threadGroup
                 val total = tg.activeCount()
@@ -217,14 +296,23 @@ class ThreadMountain<T>(
                 }
                 m.returnCode.iterator().forEach { rCode ->
                     rCode.value.iterator().forEach {
-                        System.out.println(
-                            "===callable:${rCode.key.hashCode()},return:${m.futures[it]?.get(
-                                5,
-                                TimeUnit.SECONDS
-                            )},exception:${m.exceptions[it]}"
-                        )
+                        val future = m.futures[it]
+                        if (future != null && future.isDone) {
+                            System.out.println(
+                                "===callable:${rCode.key.hashCode()},return:${future.get(
+                                    5,
+                                    TimeUnit.SECONDS
+                                )},exception:${m.exceptions[it]}"
+                            )
+                        } else {
+                            System.out.println(
+                                "===callable:${rCode.key.hashCode()} is not done or self,exception:${m.exceptions[it]}"
+                            )
+                        }
                     }
                 }
+                System.out.println("===cEnd Done===")
+                return@Callable Int.MAX_VALUE
             }
 
             m.offer(Pair(c1, 3))
@@ -232,6 +320,8 @@ class ThreadMountain<T>(
             m.offer(Pair(c3, 1))
             m.offer(Pair(c4, 2))
             m.offer(Pair(cEnd, Int.MAX_VALUE))
+            System.out.println("joined cEnd:${m.join(cEnd)}")
+            System.out.println("===main Done===")
         }
     }
 }

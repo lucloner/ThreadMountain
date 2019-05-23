@@ -34,7 +34,7 @@ public class ThreadMountainTest {
                     Thread.sleep(100);
                 }
                 System.out.println("\n@END@@@@@@@@@@@@@@@@@@@@@@@");
-                return 1;
+                return 2;
             }
         };
         final Callable<Object> c3 = new Callable<Object>() {
@@ -46,7 +46,7 @@ public class ThreadMountainTest {
                     Thread.sleep(100);
                 }
                 System.out.println("\n#END#######################");
-                return 1;
+                return 3;
             }
         };
         final Callable<Object> c4 = new Callable<Object>() {
@@ -58,7 +58,7 @@ public class ThreadMountainTest {
                     Thread.sleep(100);
                 }
                 System.out.println("\n%END%%%%%%%%%%%%%%%%%%%%%%%");
-                return 1;
+                return 4;
             }
         };
         final Callable<Object> cEnd = () -> {

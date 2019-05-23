@@ -136,7 +136,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         return offer(new ThreadMountain.Work(callable, level));
     }
 
-    final class Work extends Object implements Callable<T> {
+    protected final class Work extends Object implements Callable<T> {
         private final ExecutorService pool = Executors.newSingleThreadExecutor(threadFactory);
         private final Callable<? extends T> callable;
         volatile int fakeLevel;
