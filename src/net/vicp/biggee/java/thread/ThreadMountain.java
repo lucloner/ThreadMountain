@@ -69,7 +69,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         //开始做事
         taskManager.scheduleAtFixedRate(() -> {
             //排序
-            this.sort(Comparator.comparingInt(o -> o.fakeLevel));
+            this.sort(Comparator.comparingInt(o -> o.level()));
 
             //声明
             final ThreadMountain.Work work = poll();
@@ -111,7 +111,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             final Iterator<ThreadMountain.Work> checkListIterator = checkList.iterator();
             while (checkListIterator.hasNext()) {
                 final ThreadMountain.Work it = checkListIterator.next();
-                it.fakeLevel = Integer.MAX_VALUE;
+                it.setLevel(Integer.MAX_VALUE);
                 try {
                     it.dispose();
                 } catch (Throwable throwable) {
@@ -136,16 +136,18 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         return offer(new ThreadMountain.Work(callable, level));
     }
 
-    protected final class Work extends Object implements Callable<T> {
+    final class Work extends Object implements Callable<T> {
         private final ExecutorService pool = Executors.newSingleThreadExecutor(threadFactory);
         private final Callable<? extends T> callable;
-        volatile int fakeLevel;
+        private final int level;
+        private volatile int fakeLevel;
         private volatile Thread thread = null;
 
         //构造函数
         Work(@NotNull final Callable<? extends T> callable, final int level) {
             super();
             this.callable = callable;
+            this.level = level;
             fakeLevel = level;
         }
 
@@ -175,7 +177,11 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         }
 
         final int level() {
-            return fakeLevel;
+            return Integer.max(level, fakeLevel);
+        }
+
+        final int setLevel(int level) {
+            return fakeLevel = level;
         }
 
         final boolean sameThread(Thread thread) {

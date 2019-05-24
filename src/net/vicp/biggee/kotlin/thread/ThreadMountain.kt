@@ -6,6 +6,7 @@ import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashSet
+import kotlin.math.max
 import kotlin.math.min
 
 //此为包装后的线程池,主要功能为根据优先级顺序执行,等级越高执行越是排后
@@ -165,7 +166,7 @@ class ThreadMountain<T>(
                     it.join()
                     return true
                 } else if (isDone) {
-                    System.out.println("already done!")
+//                    System.out.println("already done!")
                     return false
                 }
             }
@@ -219,7 +220,7 @@ class ThreadMountain<T>(
         fun executed() = thread != null
         fun isAlive() = thread?.isAlive ?: true
         fun callable() = queue.first
-        fun level() = fakeLevel
+        fun level() = max(fakeLevel, queue.second)
         fun sameThread(thread: Thread) = this.thread?.equals(thread) ?: false
         fun doSubmit(): Future<T>? = pool.submit(this)
         fun shutdown() = pool.shutdown()
@@ -305,9 +306,9 @@ class ThreadMountain<T>(
                                 )},exception:${m.exceptions[it]}"
                             )
                         } else {
-                            System.out.println(
-                                "===callable:${rCode.key.hashCode()} is not done or self,exception:${m.exceptions[it]}"
-                            )
+//                            System.out.println(
+//                                "===callable:${rCode.key.hashCode()} is not done or self,exception:${m.exceptions[it]}"
+//                            )
                         }
                     }
                 }
