@@ -117,7 +117,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
             while (workListIterator.hasNext()) {
                 final ThreadMountain.Work it = workListIterator.next();
-                if (it.executed() && it.isAlive() && futures.get(it.hashCode()).isDone()) {
+                if (it.executed() && (futures.get(it.hashCode()).isDone() || !it.isAlive())) {
                     checkList.add(it);
                 }
             }
@@ -204,6 +204,13 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
 
         final void dispose() throws Throwable {
             finalize();
+            if (!pool.isShutdown()) {
+                pool.shutdown();
+                pool.shutdownNow();
+            }
+            if (thread != null) {
+                thread.stop();
+            }
         }
     }
 }
