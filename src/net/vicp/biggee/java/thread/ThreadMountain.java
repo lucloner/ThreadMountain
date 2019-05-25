@@ -168,7 +168,10 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
         }
 
         final boolean isAlive() {
-            return thread.isAlive();
+            if (thread != null) {
+                return thread.isAlive();
+            }
+            return true;
         }
 
         final Callable<? extends T> callable() {
