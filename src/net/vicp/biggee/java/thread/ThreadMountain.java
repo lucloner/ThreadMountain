@@ -11,7 +11,6 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
     public final long timeout;
     public final ThreadGroup threadGroup;
     private final Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
-    private final ThreadFactory threadFactory;
     private final ScheduledExecutorService taskManager = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledExecutorService guardian = Executors.newSingleThreadScheduledExecutor();
 
@@ -59,12 +58,6 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
 
         threadGroup = new ThreadGroup(mountainName);
         threadGroup.setDaemon(this.daemon);
-        threadFactory = (r) -> {
-            final Thread thread = new Thread(threadGroup, r, this.mountainName + "_" + r.hashCode());
-            thread.setDaemon(this.daemon);
-            thread.setUncaughtExceptionHandler(uncaughtExceptionHandler);
-            return thread;
-        };
 
         //开始做事
         taskManager.scheduleAtFixedRate(() -> {
@@ -72,11 +65,6 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             this.sort(Comparator.comparingInt(o -> o.level()));
 
             //声明
-            final ThreadMountain.Work work = poll();
-            if (work == null) {
-                return;
-            }
-
             final ArrayList<ThreadMountain.Work> done = new ArrayList<>();
             int minlevel = Integer.MAX_VALUE;
             final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
@@ -90,11 +78,15 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             }
             workList.removeAll(done);
 
+            final ThreadMountain.Work work = poll();
+            if (work == null) {
+                return;
+            }
             if (work.level() > minlevel) {
                 offer(work);
             } else {
+                workList.add(work);
                 futures.put(work.hashCode(), work.doSubmit());
-                work.shutdown();
                 LinkedHashSet<Integer> returnCodeList = returnCode.get(work.callable());
                 if (returnCodeList == null) {
                     returnCodeList = new LinkedHashSet<>();
@@ -137,7 +129,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
     }
 
     final class Work extends Object implements Callable<T> {
-        private final ExecutorService pool = Executors.newSingleThreadExecutor(threadFactory);
+        private final ExecutorService pool;
         private final Callable<? extends T> callable;
         private final int level;
         private volatile int fakeLevel;
@@ -149,6 +141,13 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             this.callable = callable;
             this.level = level;
             fakeLevel = level;
+            pool = Executors.newSingleThreadExecutor((r) -> {
+                Thread thread = new Thread(threadGroup, r, mountainName + "_" + callable.hashCode(), 0);
+                thread.setDaemon(daemon);
+                thread.setUncaughtExceptionHandler(uncaughtExceptionHandler);
+                this.thread = thread;
+                return thread;
+            });
         }
 
         /**
@@ -159,8 +158,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
          */
         @Override
         public T call() throws Exception {
-            thread = Thread.currentThread();
-            workList.add(this);
+            pool.shutdown();
             return callable.call();
         }
 
@@ -180,11 +178,11 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             return Integer.max(level, fakeLevel);
         }
 
-        final int setLevel(int level) {
+        final int setLevel(final int level) {
             return fakeLevel = level;
         }
 
-        final boolean sameThread(Thread thread) {
+        final boolean sameThread(final Thread thread) {
             return this.thread.equals(thread);
         }
 
