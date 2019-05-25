@@ -28,6 +28,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
     }
 
     public ThreadMountain(final String mountainName, final Boolean daemon, final Long timeout) {
+        super();
         //初始化
         if (mountainName != null) {
             this.mountainName = mountainName;
@@ -66,12 +67,12 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
 
             //声明
             final ArrayList<ThreadMountain.Work> done = new ArrayList<>();
-            int minlevel = Integer.MAX_VALUE;
+            int minLevel = Integer.MAX_VALUE;
             final Iterator<ThreadMountain.Work> workListIterator = workList.iterator();
             while (workListIterator.hasNext()) {
                 final ThreadMountain.Work it = workListIterator.next();
                 if (it.isAlive()) {
-                    minlevel = Integer.min(minlevel, it.level());
+                    minLevel = Integer.min(minLevel, it.level());
                 } else {
                     done.add(it);
                 }
@@ -82,7 +83,7 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
             if (work == null) {
                 return;
             }
-            if (work.level() > minlevel) {
+            if (work.level() > minLevel) {
                 offer(work);
             } else {
                 workList.add(work);
