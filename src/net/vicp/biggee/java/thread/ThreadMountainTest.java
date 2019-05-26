@@ -3,7 +3,6 @@ package net.vicp.biggee.java.thread;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class ThreadMountainTest {
@@ -104,10 +103,12 @@ public class ThreadMountainTest {
 //        m.addWork(cEnd, Integer.MAX_VALUE);
         try {
             Thread.sleep(10000);
+            cEnd.call();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        Executors.newSingleThreadExecutor().submit(cEnd);
         System.out.println("main end");
     }
 }
