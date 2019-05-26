@@ -3,6 +3,7 @@ package net.vicp.biggee.java.thread;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class ThreadMountainTest {
@@ -63,7 +64,7 @@ public class ThreadMountainTest {
         };
         final Callable<Object> cEnd = () -> {
             System.out.println();
-            final ThreadGroup tg = Thread.currentThread().getThreadGroup();
+            final ThreadGroup tg = m.threadGroup;
             final int total = tg.activeCount();
             final Thread[] ts = new Thread[total];
             tg.enumerate(ts);
@@ -79,13 +80,14 @@ public class ThreadMountainTest {
             while (returnCodeIterator.hasNext()) {
                 final Callable<Object> callable = returnCodeIterator.next();
                 final int rCode = callable.hashCode();
-                final Iterator<Integer> futuresIterator = m.futures.keySet().iterator();
-                while (futuresIterator.hasNext()) {
-                    final int it = futuresIterator.next();
-                    System.out.println("===callable:" + rCode + "," +
-                            "return:" + m.futures.get(it).get(m.timeout, TimeUnit.MILLISECONDS) + "," +
-                            "exception:" + m.exceptions.get(it));
-                }
+                System.out.println("===callable:" + rCode);
+            }
+            final Iterator<Integer> futuresIterator = m.futures.keySet().iterator();
+            while (futuresIterator.hasNext()) {
+                final int it = futuresIterator.next();
+                System.out.println("===" +
+                        "return:" + m.futures.get(it).get(m.timeout, TimeUnit.MILLISECONDS) + "," +
+                        "exception:" + m.exceptions.get(it));
             }
             return Integer.MAX_VALUE;
         };
@@ -99,7 +101,13 @@ public class ThreadMountainTest {
         System.out.println("add c4");
         m.addWork(c4, 2);
         System.out.println("add cEnd");
-        m.addWork(cEnd, Integer.MAX_VALUE);
+//        m.addWork(cEnd, Integer.MAX_VALUE);
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        Executors.newSingleThreadExecutor().submit(cEnd);
         System.out.println("main end");
     }
 }
