@@ -15,8 +15,15 @@ class ThreadMountain<T>(
     val daemon: Boolean = false,
     val timeout: Long = 5000
 ) : LinkedList<Pair<Callable<T>, Int>>(), Thread.UncaughtExceptionHandler, ThreadFactory {
-    private val guardian = Executors.newScheduledThreadPool(1)
-    private val taskManager = Executors.newScheduledThreadPool(1)
+    private val innerThreadFactory = object : ThreadFactory {
+        override fun newThread(r: Runnable): Thread {
+            return Thread(r).apply {
+                isDaemon = true
+            }
+        }
+    }
+    private val guardian = Executors.newScheduledThreadPool(1, innerThreadFactory)
+    private val taskManager = Executors.newScheduledThreadPool(1, innerThreadFactory)
     val threadGroup = ThreadGroup(mountainName).apply {
         isDaemon = daemon
     }

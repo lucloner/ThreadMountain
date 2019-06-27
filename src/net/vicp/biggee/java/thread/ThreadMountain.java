@@ -11,8 +11,11 @@ public final class ThreadMountain<T> extends LinkedList<ThreadMountain.Work> {
     public final long timeout;
     public final ThreadGroup threadGroup;
     private final Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
-    private final ScheduledExecutorService taskManager = Executors.newSingleThreadScheduledExecutor();
-    private final ScheduledExecutorService guardian = Executors.newSingleThreadScheduledExecutor();
+    private final ThreadFactory innerThreadFactory = r -> new Thread(r) {{
+        setDaemon(true);
+    }};
+    private final ScheduledExecutorService taskManager = Executors.newSingleThreadScheduledExecutor(innerThreadFactory);
+    private final ScheduledExecutorService guardian = Executors.newSingleThreadScheduledExecutor(innerThreadFactory);
 
     //返回集合
     public final HashMap<Callable<T>, LinkedHashSet<Integer>> returnCode = new HashMap<>();
